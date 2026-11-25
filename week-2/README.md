@@ -6,7 +6,7 @@ A small in-memory To-Do list REST API built with **FastAPI** and **Python 3.11+*
 
 ## Quick Start
 
-From the `week 2` directory, install dependencies and start the server in one command:
+From the `week-2` directory, install dependencies and start the server in one command:
 
 ```bash
 pip install -r requirements.txt && python -m uvicorn main:app --reload
@@ -53,6 +53,6 @@ content-type: application/json
 
 ## Swagger UI Screenshot
 
-Open <http://127.0.0.1:8000/docs> while the server is running to test all endpoints interactively with **Try it out** (and save a screenshot at `docs/swagger-ui.png`):
+Interactive API documentation at <http://127.0.0.1:8000/docs>:
 
 ![Swagger UI](docs/swagger-ui.png)

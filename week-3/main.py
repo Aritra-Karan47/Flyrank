@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager, closing
 from pathlib import Path
 import sqlite3
+from typing import Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, StrictBool, StrictStr
 
 DB_PATH = Path(__file__).with_name("tasks.db")
 
@@ -20,6 +21,11 @@ class TaskCreate(BaseModel):
     title: StrictStr
 
 
+class TaskUpdate(BaseModel):
+    title: Optional[StrictStr] = None
+    done: Optional[StrictBool] = None
+
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -28,6 +34,10 @@ def get_connection() -> sqlite3.Connection:
 
 def row_to_task(row: sqlite3.Row) -> dict:
     return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+
+def not_found_response() -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "Task not found"})
 
 
 def init_db() -> None:
@@ -95,7 +105,7 @@ def get_task(task_id: int):
             (task_id,),
         ).fetchone()
     if row is None:
-        return JSONResponse(status_code=404, content={"error": "Task not found"})
+        return not_found_response()
     return row_to_task(row)
 
 
@@ -111,3 +121,44 @@ def create_task(payload: TaskCreate):
         )
         task_id = cursor.lastrowid
     return {"id": task_id, "title": title, "done": False}
+
+
+@app.put("/tasks/{task_id}", description="Update an existing task in the database.")
+def update_task(task_id: int, payload: TaskUpdate):
+    if payload.title is None and payload.done is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Provide at least one of 'title' or 'done' to update"},
+        )
+    new_title: Optional[str] = None
+    if payload.title is not None:
+        new_title = payload.title.strip()
+        if not new_title:
+            return JSONResponse(status_code=400, content={"error": "Title must not be empty"})
+
+    with closing(get_connection()) as conn, conn:
+        row = conn.execute(
+            "SELECT id, title, done FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            return not_found_response()
+        updated_title = new_title if new_title is not None else row["title"]
+        updated_done = int(payload.done) if payload.done is not None else row["done"]
+        conn.execute(
+            "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+            (updated_title, updated_done, task_id),
+        )
+    return {"id": task_id, "title": updated_title, "done": bool(updated_done)}
+
+
+@app.delete("/tasks/{task_id}", status_code=204, description="Delete a task from the database.")
+def delete_task(task_id: int):
+    with closing(get_connection()) as conn, conn:
+        cursor = conn.execute(
+            "DELETE FROM tasks WHERE id = ?",
+            (task_id,),
+        )
+    if cursor.rowcount == 0:
+        return not_found_response()
+    return Response(status_code=204)

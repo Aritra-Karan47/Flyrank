@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager, closing
 from pathlib import Path
 import sqlite3
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, StrictStr
 
 DB_PATH = Path(__file__).with_name("tasks.db")
 
@@ -12,6 +14,10 @@ SEED_TASKS = [
     ("Build CRUD endpoints", 0),
     ("Test API in Swagger UI", 0),
 ]
+
+
+class TaskCreate(BaseModel):
+    title: StrictStr
 
 
 def get_connection() -> sqlite3.Connection:
@@ -57,6 +63,11 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(RequestValidationError)
+def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=400, content={"error": "Invalid request body"})
+
+
 @app.get("/", description="Return basic API metadata and available endpoints.")
 def read_root():
     return {"name": "Task API", "version": "2.0", "endpoints": ["/tasks"]}
@@ -86,3 +97,17 @@ def get_task(task_id: int):
     if row is None:
         return JSONResponse(status_code=404, content={"error": "Task not found"})
     return row_to_task(row)
+
+
+@app.post("/tasks", status_code=201, description="Insert a new task into the database.")
+def create_task(payload: TaskCreate):
+    title = payload.title.strip()
+    if not title:
+        return JSONResponse(status_code=400, content={"error": "Title must not be empty"})
+    with closing(get_connection()) as conn, conn:
+        cursor = conn.execute(
+            "INSERT INTO tasks (title, done) VALUES (?, 0)",
+            (title,),
+        )
+        task_id = cursor.lastrowid
+    return {"id": task_id, "title": title, "done": False}

@@ -54,6 +54,6 @@ Observed result on the seeded database:
 
 ## Database Viewer Screenshot
 
-Open `week-3/tasks.db` in **DB Browser for SQLite** (or a VS Code SQLite viewer) and save a screenshot at `docs/db-viewer.png`:
+Viewing `week-3/tasks.db` in SQLite Explorer:
 
 ![SQLite Database Viewer](docs/db-viewer.png)

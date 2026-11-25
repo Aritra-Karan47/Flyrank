@@ -1,59 +1,62 @@
-# Week 3 — Task CRUD API with SQLite (FastAPI)
+# Week 3 — Task CRUD API with PostgreSQL & Docker Compose
 
-A persistent To-Do list REST API built with **FastAPI** and Python's built-in **`sqlite3`** library. It preserves the exact same CRUD endpoints and HTTP status codes from Week 2 while replacing the in-memory list with a real SQLite database so tasks survive server restarts.
+A continuation of the Week 3 Task CRUD API that runs **PostgreSQL in Docker** with a named volume, loads configuration from `.env`, initializes the database schema via `init.sql`, swaps the in-memory repository for `PostgresTaskRepository` without touching the service or route layers, and launches the whole stack with `docker compose up`.
 
-## Why SQLite?
+## Architecture & Repository Swap
 
-- **Zero setup:** SQLite is built directly into Python's standard library (`sqlite3`) and requires no separate database server or background daemon.
-- **Single-file persistence:** All tables and rows live in one portable file on disk, making it ideal for local development and small services while still using real SQL (`SELECT`, `INSERT`, `UPDATE`, `DELETE`).
-- **Clean separation of layers:** The API routes and JSON contracts stay identical to Week 2—only the data storage layer changed.
+The API is split into three clean layers inside `week-3/`:
 
-## Database File Location
+- [`routes.py`](routes.py) — FastAPI HTTP endpoints (`GET /`, `GET /health`, `GET /tasks`, `GET /tasks/{task_id}`, `POST /tasks`, `PUT /tasks/{task_id}`, `DELETE /tasks/{task_id}`). Depends only on `TaskService`.
+- [`service.py`](service.py) — `TaskService` business logic and input validation (`ValidationError`, `TaskNotFoundError`). Depends only on the `TaskRepository` interface.
+- [`repository.py`](repository.py) — Defines the `TaskRepository` protocol and two implementations with the exact same interface:
+  - `InMemoryTaskRepository` (reference in-memory store)
+  - `PostgresTaskRepository` (real PostgreSQL store using `psycopg2`)
+- [`main.py`](main.py) — Loads `.env` and swaps `PostgresTaskRepository(DATABASE_URL)` into `TaskService` -> `create_router(task_service)`. Neither `service.py` nor `routes.py` changed when swapping storage.
 
-- **File path:** `week-3/tasks.db` (resolved relative to `main.py` via `Path(__file__).with_name("tasks.db")`).
-- **Auto-initialization:** On startup, if `tasks.db` or the `tasks` table does not exist, the app creates them automatically and seeds 3 example tasks only when the table is empty (`COUNT(*) == 0`).
-- **Git ignored:** `*.db` is listed in the root `.gitignore` so every fresh clone creates its own clean `tasks.db` on first run.
+## Environment Configuration
 
-## How to Start the Project
+- [`.env.example`](.env.example) is committed as a template.
+- `.env` holds the local credentials and `DATABASE_URL`, and is gitignored via the root `.gitignore`.
 
-From the `week-3` directory, install dependencies and start the server:
+Before running, copy `.env.example` to `.env` if it does not exist yet:
 
 ```bash
-pip install -r requirements.txt && python -m uvicorn main:app --reload
+cp .env.example .env
 ```
 
-Once running, open:
+## Database Initialization (`init.sql`)
+
+[`init.sql`](init.sql) is mounted into Postgres at `/docker-entrypoint-initdb.d/init.sql`. On first initialization of the `postgres_data` volume, it creates the `tasks` table (`id`, `title`, `done`) and seeds 3 example tasks only if the table is empty.
+
+## Run with Docker Compose
+
+From the `week-3` directory, start both the FastAPI app and PostgreSQL together:
+
+```bash
+docker compose up --build
+```
+
+Once running:
 - **API Root:** <http://127.0.0.1:8000/>
 - **Swagger UI:** <http://127.0.0.1:8000/docs>
 
-## Endpoints
+## Verifying Persistence Across App + Container Restarts
 
-| Method | Path | Description | Status Codes |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/` | API metadata (`name`, `version`, `endpoints`) | `200` |
-| `GET` | `/health` | Health check (`{"status": "ok"}`) | `200` |
-| `GET` | `/tasks` | List all tasks from `tasks.db` | `200` |
-| `GET` | `/tasks/{task_id}` | Get a single task by ID | `200`, `404` |
-| `POST` | `/tasks` | Insert a new task (`{"title": "..."}`) | `201`, `400` |
-| `PUT` | `/tasks/{task_id}` | Update a task's `title` and/or `done` flag | `200`, `400`, `404` |
-| `DELETE` | `/tasks/{task_id}` | Delete a task by ID | `204`, `404` |
+With the stack running (`docker compose up -d --build`):
 
-## Example SQL Query Executed
+1. Create a new task:
+   ```bash
+   curl -i -X POST http://127.0.0.1:8000/tasks \
+     -H "Content-Type: application/json" \
+     -d '{"title":"Survive Docker restart"}'
+   ```
+2. Restart both the app and Postgres containers (or recreate containers while preserving the `postgres_data` volume):
+   ```bash
+   docker compose down && docker compose up -d
+   ```
+3. Query `GET /tasks` again and confirm the created row is still returned:
+   ```bash
+   curl -i http://127.0.0.1:8000/tasks
+   ```
 
-All five Stage 4 queries are saved in [`queries.sql`](queries.sql). Example query executed directly against `tasks.db`:
-
-```sql
-SELECT * FROM tasks WHERE done = 1;
-```
-
-Observed result on the seeded database:
-
-```text
-[(1, 'Learn FastAPI basics', 1)]
-```
-
-## Database Viewer Screenshot
-
-Viewing `week-3/tasks.db` in SQLite Explorer:
-
-![SQLite Database Viewer](docs/db-viewer.png)
+*(Previous SQLite exploration queries and screenshot remain preserved in [`queries.sql`](queries.sql) and [`docs/db-viewer.png`](docs/db-viewer.png).)*

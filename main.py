@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -8,6 +10,23 @@ tasks = [
     {"id": 2, "title": "Build CRUD endpoints", "done": False},
     {"id": 3, "title": "Test API in Swagger UI", "done": False},
 ]
+next_id = 4
+
+
+class TaskCreate(BaseModel):
+    title: str
+
+
+@app.exception_handler(RequestValidationError)
+def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=400,
+        content={"error": "Invalid request body: 'title' is required and must be a valid value"},
+    )
+
+
+def find_task(task_id: int):
+    return next((t for t in tasks if t["id"] == task_id), None)
 
 
 @app.get("/")
@@ -27,7 +46,19 @@ def list_tasks():
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    task = next((t for t in tasks if t["id"] == task_id), None)
+    task = find_task(task_id)
     if task is None:
         return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
+    return task
+
+
+@app.post("/tasks", status_code=201)
+def create_task(payload: TaskCreate):
+    global next_id
+    title = payload.title.strip()
+    if not title:
+        return JSONResponse(status_code=400, content={"error": "Title must not be empty"})
+    task = {"id": next_id, "title": title, "done": False}
+    next_id += 1
+    tasks.append(task)
     return task

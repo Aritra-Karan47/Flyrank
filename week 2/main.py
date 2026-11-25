@@ -5,7 +5,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StrictBool, StrictStr
 
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    version="1.0",
+    description="In-memory to-do list CRUD API.",
+)
 
 tasks = [
     {"id": 1, "title": "Learn FastAPI basics", "done": True},
@@ -26,10 +30,7 @@ class TaskUpdate(BaseModel):
 
 @app.exception_handler(RequestValidationError)
 def validation_exception_handler(request: Request, exc: RequestValidationError):
-    return JSONResponse(
-        status_code=400,
-        content={"error": "Invalid request body"},
-    )
+    return JSONResponse(status_code=400, content={"error": "Invalid request body"})
 
 
 def find_task(task_id: int):
@@ -40,22 +41,22 @@ def not_found_response(task_id: int) -> JSONResponse:
     return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
 
 
-@app.get("/")
+@app.get("/", description="Return basic API metadata and available endpoints.")
 def read_root():
     return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
 
 
-@app.get("/health")
+@app.get("/health", description="Check whether the API server is alive.")
 def health_check():
     return {"status": "ok"}
 
 
-@app.get("/tasks")
+@app.get("/tasks", description="Return all tasks currently stored in memory.")
 def list_tasks():
     return tasks
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", description="Return a single task by its numeric ID.")
 def get_task(task_id: int):
     task = find_task(task_id)
     if task is None:
@@ -63,7 +64,7 @@ def get_task(task_id: int):
     return task
 
 
-@app.post("/tasks", status_code=201)
+@app.post("/tasks", status_code=201, description="Create a new task with done set to false.")
 def create_task(payload: TaskCreate):
     global next_id
     title = payload.title.strip()
@@ -75,7 +76,7 @@ def create_task(payload: TaskCreate):
     return task
 
 
-@app.put("/tasks/{task_id}")
+@app.put("/tasks/{task_id}", description="Update an existing task's title and/or done status.")
 def update_task(task_id: int, payload: TaskUpdate):
     task = find_task(task_id)
     if task is None:
@@ -95,7 +96,7 @@ def update_task(task_id: int, payload: TaskUpdate):
     return task
 
 
-@app.delete("/tasks/{task_id}", status_code=204)
+@app.delete("/tasks/{task_id}", status_code=204, description="Delete a task by its numeric ID.")
 def delete_task(task_id: int):
     task = find_task(task_id)
     if task is None:
